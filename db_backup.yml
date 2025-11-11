@@ -1,0 +1,41 @@
+---
+- name: Take MariaDB backup from remote CentOS servers and store centrally
+  hosts: centos_clients
+  become: yes
+
+  vars:
+    db_user: <db_user name>
+    db_password: <db_password>
+    remote_backup_dir: /tmp/mariadb_backup
+    control_server_backup_dir: /backups/db_backup
+
+  tasks:
+    - name: Ensure remote backup directory exists
+      file:
+        path: "{{ remote_backup_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Dump MariaDB database
+      shell: |
+        mysqldump -h 127.0.0.1 -P {{ db_port | default(3306) }} -u{{ db_user }} -p{{ db_password }} --all-databases \
+        > {{ remote_backup_dir }}/mariadb_{{ ansible_date_time.date }}.sql
+      args:
+        executable: /bin/bash
+
+    - name: Compress the SQL file to .sql.gz
+      archive:
+        path: "{{ remote_backup_dir }}/mariadb_{{ ansible_date_time.date }}.sql"
+        dest: "{{ remote_backup_dir }}/mariadb_{{ ansible_date_time.date }}.sql.gz"
+        format: gz
+
+    - name: Fetch backup file to control server
+      fetch:
+        src: "{{ remote_backup_dir }}/mariadb_{{ ansible_date_time.date }}.sql.gz"
+        dest: "{{ control_server_backup_dir }}/{{ inventory_hostname }}/"
+        flat: yes
+
+    - name: Cleanup remote temporary backup files
+      file:
+        path: "{{ remote_backup_dir }}"
+        state: absent
